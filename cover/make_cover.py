@@ -15,7 +15,8 @@ config.json 示例（视角 lat/lon/dist 必填，没有默认值——见 SPEC.
     "out_dir": "out/my_topic",
     "landscape": {"lat": 0, "lon": 0, "dist": 0, "ty": 0},
     "portrait":  {"lat": 0, "lon": 0, "dist": 0, "ty": 0},
-    "effect": "none" | "pg" | "monsoon" | "rof" | "examples/my_effect.py"
+    "effect": "none" | "pg" | "monsoon" | "rof" | "examples/my_effect.py",
+    "portrait_exposure": 1.08, "portrait_saturation": 1.12     # 可选；竖版地球略鲜亮（横版默认 1.0/1.0）
   }
   ty = 标题基线 y（像素）。系列标准：横版 500、竖版 880（见 SPEC.md §5）。
 自定义特效文件需定义 draw(ctx)，ctx 提供 cv, cam, proj(lat,lon,r), visible(lat,lon), sc, P, W, H, orient, TY。
@@ -23,7 +24,7 @@ config.json 示例（视角 lat/lon/dist 必填，没有默认值——见 SPEC.
 """
 import sys, os, json, math, subprocess
 
-HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
+HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.environ.get('EARTH_REPO', os.path.dirname(HERE))   # 3D-Earth 仓库根目录（globe.py 所在）；cover/ 被单独拷走时用 EARTH_REPO 指回仓库
 PY = sys.executable
 
 # ---------------- 字体 ----------------
@@ -62,6 +63,30 @@ def sun_latlon(lat, lon):
     l2 = l1+math.atan2(math.sin(b)*math.sin(d)*math.cos(f1), math.cos(d)-math.sin(f1)*math.sin(f2))
     return math.degrees(f2), math.degrees(l2)
 GLOBE = dict(t=4.0, cloud_a=.16, star_a=1.0)   # 其余（atmo/exposure/night/land_dim…）全用 globe.py 默认值：无 DEM 浮雕、无 ocean_k
+# 地球调色（只作用于球面，不动文字/背景/星空/球外光晕）。竖版略鲜亮：见 SPEC.md §2.3「竖版调色」
+GRADE = {'l': dict(exposure=1.0, saturation=1.0),
+         'p': dict(exposure=1.08, saturation=1.12)}
+def grade_globe(rgb, cam, W, H, exposure=1.0, saturation=1.0):
+    """rgb: HxWx3 uint8。在线性光里提亮（带高光软肩，云/雪不爆白）、围绕亮度提饱和（色相不变，海洋不偏青），
+    只在地球圆盘内生效，边缘 1.5px 羽化。exposure=saturation=1 时原样返回。"""
+    import numpy as np
+    if exposure == 1.0 and saturation == 1.0: return rgb
+    d = float(np.linalg.norm(cam.eye)); R = math.tan(math.asin(1/d))/cam.th*H/2       # 球在屏幕上的半径（像素）
+    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)+.5
+    m = np.clip((R+0.75-np.hypot(xx-W/2, yy-H/2))/1.5, 0, 1)[..., None]
+    x = rgb.astype(np.float32)/255.
+    lin = np.where(x <= 0.04045, x/12.92, ((x+0.055)/1.055)**2.4)
+    L = (lin*np.array([.2126, .7152, .0722], np.float32)).sum(-1, keepdims=True)
+    # 饱和度：越亮（云、雪）越少加，避免彩色光晕；暗部也少加
+    w = np.clip(1-(L-.55)/.35, 0, 1)*np.clip(L/.02, 0, 1)
+    lin = np.maximum(L+(lin-L)*(1+(saturation-1)*w), 0)
+    # 曝光 + 软肩：0.8 以下纯线性，0.8 以上平滑压到 1，不硬裁剪
+    lin = lin*exposure; k = .8
+    lin = np.where(lin > k, k+(1-k)*np.tanh((lin-k)/(1-k)), lin)
+    out = np.where(lin <= 0.0031308, lin*12.92, 1.055*np.power(np.maximum(lin, 0), 1/2.4)-0.055)
+    out = x*(1-m)+np.clip(out, 0, 1)*m
+    return (out*255+.5).astype(np.uint8)
+
 LAYOUT = {   # 字号/字距/最大宽度/副标题间距/暗角（中心y偏移, 半径, 不透明度）
     'l': dict(W=1920, H=1080, sc=1.0, title=150, tsp=40, maxw=1500, qsize=46, qsp=18, qgap=110,
               scrims=[(-50, 700, .42), (100, 420, .35)]),
@@ -138,6 +163,9 @@ def render_one(cfg, orient):
     slat, slon = sun_latlon(LAT, LON)
     A = g.render(c, sun=tuple(sph(slat, slon)), **GLOBE)
     im = Image.fromarray(A[:, :, :3]).resize((W, H), Image.LANCZOS)
+    gk = 'portrait' if orient == 'p' else 'landscape'
+    ge = float(cfg.get(f'{gk}_exposure', GRADE[orient]['exposure'])); gs = float(cfg.get(f'{gk}_saturation', GRADE[orient]['saturation']))
+    im = Image.fromarray(grade_globe(np.asarray(im), c, W, H, ge, gs))
     surf = skia.Surface(W, H); cv = surf.getCanvas()
     cv.drawImage(skia.Image.fromarray(np.array(im.convert('RGBA')), colorType=skia.kRGBA_8888_ColorType), 0, 0)
     # 2) 主题特效
@@ -167,7 +195,7 @@ def render_one(cfg, orient):
         return size, tot
     ts = line(cfg['title'], L['title'], TY, L['tsp'], 'sb', maxw=L['maxw'])
     qs = line(cfg['question'], L['qsize'], TY+L['qgap'], L['qsp'], 'sr', QALPHA, QCOLOR, maxw=L['maxw'])
-    print(f'[{orient}] sun {slat:.2f}/{slon:.2f}  title size/width {ts[0]:.1f}/{ts[1]:.0f}  question {qs[0]:.1f}/{qs[1]:.0f}')
+    print(f'[{orient}] sun {slat:.2f}/{slon:.2f}  grade exp {ge}/sat {gs}  title size/width {ts[0]:.1f}/{ts[1]:.0f}  question {qs[0]:.1f}/{qs[1]:.0f}')
     # 5) 导出
     out = surf.makeImageSnapshot().toarray(colorType=skia.kRGBA_8888_ColorType)[:, :, :3]
     name = 'landscape' if orient == 'l' else 'portrait'

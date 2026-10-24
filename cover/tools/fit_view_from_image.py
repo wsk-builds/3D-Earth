@@ -10,7 +10,7 @@
 只读输入图片，不写任何文件。
 """
 import sys, os, json, itertools, time
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); ROOT = os.path.dirname(HERE)
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); ROOT = os.environ.get('EARTH_REPO', os.path.dirname(HERE))
 ref_path, orient, spec = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
 W, H = (1920, 1080) if orient == 'l' else (1080, 1920)
 os.environ['EARTH_W'], os.environ['EARTH_H'] = str(W), str(H)
