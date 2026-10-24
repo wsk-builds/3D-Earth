@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+out/
+*.mp4
+*.gif
+# 由 tex_b64/ 解码生成的贴图
+tex/
