@@ -1,3 +1,4 @@
 moderngl>=5.8
 numpy>=1.22
 pillow>=9.0
+skia-python>=87.5   # wind.py 用来画气流线

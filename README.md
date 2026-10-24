@@ -16,6 +16,7 @@
 - **相机**：`look_at` 相机，可设位置、目标、视场角；`project()` 把 3D 点投影成屏幕坐标，便于在画面上叠加标注。
 - **ACES 色调映射 + 抖动**，减少色带。
 - 视频专用的示意效果（默认关闭）：绿色撒哈拉、古湖泊、季风雨带、经纬网格。
+- `wind.py`：彗星状气流粒子，可以画季风、风场、台风螺旋和哈德来这类垂直环流（见下文）。
 - `transition.py`：与渲染器无关的"匹配视角交叉溶解"转场模板（只依赖 numpy），可用来做两个镜头之间的匹配剪辑。
 
 ## 安装
@@ -88,6 +89,87 @@ x, y, depth = cam.project(sph(30, 31))              # 开罗在屏幕上的位�
 
 环境变量：`EARTH_W` / `EARTH_H`（画幅，默认 1920×1080，需在 import 之前设置）、`EARTH_TEX_DIR`（贴图目录，默认是代码旁的 `tex/`）。
 
+## 风：彗星状气流粒子（`wind.py`）
+
+来自科普视频《北纬30度》的哈德来环流和季风水汽镜头。用来在地球上表示风、季风、洋流、急流、台风这类"流动"：一根根细线带着亮头往前走，尾巴由粗到细、由实到虚。
+
+| 季风（`PathFlow`） | 哈德来环流（`VerticalLoops`） |
+| --- | --- |
+| ![季风](docs/wind_monsoon.jpg) | ![哈德来环流](docs/wind_hadley.jpg) |
+| **台风（`Typhoon`）** | **风场（`FieldFlow`）** |
+| ![台风](docs/wind_typhoon.jpg) | ![风场](docs/wind_field.jpg) |
+
+```bash
+python example_wind.py                  # out/wind_monsoon.png、wind_hadley.png、wind_typhoon.png、wind_field.png
+python example_wind.py --video          # 另外输出每个场景 4 秒的 mp4（需要 ffmpeg）
+python example_wind.py --only typhoon --ss 0.5
+```
+
+### 原理
+
+1. **粒子在 3D 里**：每个粒子是一串世界坐标点（尾→头 `K` 个），位于地表上方 `alt` 处（单位是地球半径，`0.012` ≈ 76 km，示意高度），用 `llr(lat, lon, alt)` 换成三维坐标。
+2. **路径怎么来**：
+   - `PathFlow`：你给经纬度折线，先用 Chaikin 圆角平滑，再按球面弧长等距重采样。每个粒子有固定的横向偏移（正态分布，沿路径法向），越靠近终点越收拢。
+   - `FieldFlow`：你给风场函数 `(lat, lon) -> (u, v)`，粒子从种子点出发用 RK2 积分。
+   - `Typhoon`：在气旋中心的局部平面里用极坐标积分。切向速度是修正兰金涡（眼墙内线性、眼墙外按 r^-0.5 衰减），外围按流入角向内螺旋，到眼墙附近停止流入、绕圈，中心留出风眼。北半球逆时针、南半球顺时针。
+   - `VerticalLoops`：粒子在"纬度-高度"平面里绕一个圆角矩形的环（超椭圆）：在上升纬度升起，高空流向下沉纬度，下沉，再贴地流回；每绕一圈还向东漂移几度，所以环是立体的。
+3. **随时间推进且不闪烁**：一切只由时间 `t` 决定，没有逐帧随机数。沿路径的粒子位置是 `(初相位 + t × 速度) mod 1`。风场和台风粒子按寿命 `life` 循环重生，重生位置用 `(粒子编号, 重生次数)` 的哈希决定。积分步长取"年龄 / 步数"，所以头部位置随 `t` 连续变化。出生和消亡时都有淡入淡出，循环接缝看不出来。同一个 `t` 永远画出同一帧，可以分块并行、断点续渲。
+4. **尾巴怎么画**：用 skia 在屏幕空间把相邻两点连成圆头线段。透明度沿尾巴按 `(k/K)^taper` 增大（`taper` 默认 1.3），线宽从 35% 增大到 100%，再加 0.3–1 px 的轻微模糊，让线条更柔和。头部是一个小圆点，用加色混合（`kPlus`）略微提亮。尾巴默认用普通 alpha 叠加而不是加色，粒子密集处不会糊成一片刺眼的白光。外发光 `glow` 默认是 0。
+5. **透视**：线宽乘以 `(相机到地表的距离) / (该点深度)`，近处粗、远处细。
+6. **遮挡**：每个点都从相机向它做一次光线-单位球求交，被地球挡住的线段不画。转到地球背面的粒子会自然消失，高出地表的环流在边缘处仍然可见（见哈德来示意图两侧的环）。
+
+### 用法
+
+```python
+import numpy as np
+from globe import Globe
+from cam import Cam, sph
+import wind
+
+g = Globe(ss=1.0)
+cam = Cam(tuple(sph(15, 101, 2.35)), (0, 0, 0), fov=35)
+
+monsoon = wind.PathFlow(
+    [[(-12, 52), (8, 56), (15, 80), (21, 97), (29, 113), (32, 126)],      # 印度洋 → 东亚
+     [(14, 152), (18, 128), (24, 114), (31, 119), (32.5, 126)]],          # 太平洋 → 东亚
+    weights=[.58, .42], colors=['#9fd0ff', '#b9e6ff'])
+typhoon = wind.Typhoon(center=(22.5, 128.0), radius=8, rmax=1.3, eye=.55)
+hadley = wind.VerticalLoops(lat_rise=0, lat_sink=30, lon_clusters=((-88, 16), (92, 16)))
+trades = wind.FieldFlow(lambda lat, lon: (-4 * np.cos(np.radians(lat)), 0 * lat), region=(0, 30, 100, 180))
+
+for i in range(120):
+    t = i / 30
+    base = g.render(cam, t=t, sun=tuple(sph(21, 107)), cloud_a=.16)
+    frame = wind.composite(base, cam, [monsoon, typhoon], t=t)       # HxWx4 uint8
+```
+
+也可以在自己的 skia 画布上直接画：`layer.draw(canvas, cam, t, alpha)`，`alpha` 用来做淡入淡出。最底层的 `wind.draw_streaks(canvas, cam, pos, rgb, alpha, ...)` 接受任意 `(N, K, 3)` 的 3D 折线。
+
+### 参数
+
+所有图层都有的样式参数：
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `width` | 3–3.6 | 线宽（像素，按透视缩放） |
+| `blur` | 0.4–0.6 | 尾巴的模糊半径（像素） |
+| `opacity` | 0.72–0.85 | 整体不透明度 |
+| `head`, `head_alpha` | True, 0.55 | 是否画头部亮点和它的亮度 |
+| `taper` | 1.3 | 尾巴淡出的幂次，越大尾巴越短、越虚 |
+| `glow` | 0.0 | 外发光（加色、模糊的宽线），0.15–0.3 是很淡的光晕 |
+| `additive` | False | 尾巴是否用加色混合 |
+| `alt` | 0.012–0.014 | 离地高度（地球半径） |
+| `seed` | — | 随机种子，换一个就是另一组粒子 |
+
+各图层特有的参数：
+
+- `PathFlow(paths, weights, colors, n=340, speed=(.07,.10), tail=.08, K=10, spread=2.6, converge=.6, smooth=3, fade=(.06,.15))`：`speed` 是每秒走完路径的比例，`tail` 是尾长占路径的比例，`spread` 是路径两侧散开的程度（度）。
+- `FieldFlow(field, region, n=600, life=4, tail=.6, steps=24, color)`：`field` 返回东向、北向速度（度/秒），`tail` 的单位是秒；`color` 可以是 `callable(风速) -> rgb`。
+- `Typhoon(center, radius=8, rmax=1.4, eye=.6, inflow=24, vmax=2.6, spin=None, bands=3, band_depth=.8, core_opacity=.4, n=560, life=4.5, tail=.8)`：`spin` 默认按半球自动判断；`bands` 是螺旋雨带条数；`core_opacity` 用来压暗眼墙附近最密的粒子。
+- `VerticalLoops(lat_rise=0, lat_sink=30, height=.19, base=.012, squareness=.44, hemis=(1,-1), lon_clusters, uniform_frac=1/3, lon_drift=6, speed=(.072,.088), tail=.05, colors=(暖, 冷, 回流), start=None, guide_alpha=0, guide_lons=())`：费雷尔环流可以用 `lat_rise=60, lat_sink=30`；`start` 设一个时间，粒子会从上升支依次放出；`guide_alpha` 会沿环画几条很淡的引导带。
+
+> 环流高度、粒子速度都是**示意**，不是真实数据。真实对流层只有地球半径的约 0.2%，画出来需要大幅夸大。
+
 ## 文件
 
 | 文件 | 作用 |
@@ -98,6 +180,9 @@ x, y, depth = cam.project(sph(30, 31))              # 开罗在屏幕上的位�
 | `textures.py` | 贴图解码和合成（卫星影像 + 陆地掩膜 → RGBA） |
 | `transition.py` | 匹配视角交叉溶解转场模板 |
 | `example.py` | 示例：静帧 + 环绕镜头 |
+| `wind.py` | 风 / 季风 / 台风 / 环流的彗星状气流粒子 |
+| `example_wind.py` | 示例：季风、哈德来环流、台风、风场 |
+| `docs/` | 效果预览图 |
 | `tex_b64/` | base64 编码的贴图 |
 
 ## 贴图来源与版权
