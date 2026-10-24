@@ -1,0 +1,18 @@
+{
+ "title": "季风",
+ "question": "为什么能决定几十亿人的饭碗？",
+ "out_dir": "out/monsoon",
+ "effect": "monsoon",
+ "landscape": {
+  "lat": 18,
+  "lon": 95,
+  "dist": 3.0,
+  "ty": 500
+ },
+ "portrait": {
+  "lat": 18,
+  "lon": 95,
+  "dist": 5.3,
+  "ty": 880
+ }
+}

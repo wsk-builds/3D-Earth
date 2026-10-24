@@ -170,6 +170,18 @@ for i in range(120):
 
 > 环流高度、粒子速度都是**示意**，不是真实数据。真实对流层只有地球半径的约 0.2%，画出来需要大幅夸大。
 
+## 封面规范（`cover/`）
+
+这是地理科普系列横竖版封面的规范，加上一键生成脚本，以《为什么波斯湾沿岸盛产石油？》那期的封面为基准。画面是深空背景，中间一颗 3D 地球，用的就是本仓库的 `globe.py`，自然卫星色、近正面均匀光照，和风流预览图同款；上面一行白色衬线大标题，下面一行问句副标题，文字居中稍偏上。
+
+- 规范文档：[`cover/SPEC.md`](cover/SPEC.md)，写了流程、所有参数、特效强度上限、检查清单和每期要填的表。
+- 生成：`python cover/make_cover.py cover/examples/persian_gulf.json`，同时输出横版 1920×1080 和竖版 1080×1920 的 PNG 和 JPG，放在 `cover/out/` 下。
+- 字体需要 Noto Serif CJK SC（Bold + Regular），仓库里没有附带，安装方法见 SPEC §2.4。
+
+> ⚠️ **视角（相机的纬度、经度，横竖版各自的取景）每期都要根据选题单独判断，不能照抄往期的数值。** 脚本里 `lat / lon / dist / ty` 都是必填项，判断方法见 SPEC §3。往期数值只作参考（SPEC §10）。
+
+<p><img src="cover/previews/pg_landscape.jpg" width="62%"> <img src="cover/previews/pg_portrait.jpg" width="20%"></p>
+
 ## 文件
 
 | 文件 | 作用 |
@@ -184,6 +196,7 @@ for i in range(120):
 | `example_wind.py` | 示例：季风、哈德来环流、台风、风场 |
 | `docs/` | 效果预览图 |
 | `tex_b64/` | base64 编码的贴图 |
+| `cover/` | 封面规范 `SPEC.md`、一键脚本 `make_cover.py`（直接调用根目录的 `globe.py`）、火山点数据、示例配置、反推视角工具、预览图 |
 
 ## 贴图来源与版权
 

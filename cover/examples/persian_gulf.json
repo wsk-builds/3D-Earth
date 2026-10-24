@@ -1,0 +1,18 @@
+{
+ "title": "波斯湾石油",
+ "question": "为什么波斯湾沿岸盛产石油？",
+ "out_dir": "out/persian_gulf",
+ "effect": "pg",
+ "landscape": {
+  "lat": 42,
+  "lon": 52,
+  "dist": 3.0,
+  "ty": 500
+ },
+ "portrait": {
+  "lat": 38,
+  "lon": 52,
+  "dist": 5.3,
+  "ty": 880
+ }
+}

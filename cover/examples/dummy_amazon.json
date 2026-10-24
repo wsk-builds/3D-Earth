@@ -1,0 +1,18 @@
+{
+ "title": "亚马孙雨林",
+ "question": "为什么亚马孙能下这么多雨？",
+ "out_dir": "out/dummy_amazon",
+ "effect": "examples/fx_amazon.py",
+ "landscape": {
+  "lat": 8,
+  "lon": -58,
+  "dist": 3.0,
+  "ty": 500
+ },
+ "portrait": {
+  "lat": 6,
+  "lon": -58,
+  "dist": 5.3,
+  "ty": 880
+ }
+}

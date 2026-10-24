@@ -1,0 +1,18 @@
+{
+ "title": "环太平洋火山带",
+ "question": "为什么太平洋周围有一圈火山？",
+ "out_dir": "out/ringoffire",
+ "effect": "rof",
+ "landscape": {
+  "lat": 8,
+  "lon": -165,
+  "dist": 3.3,
+  "ty": 500
+ },
+ "portrait": {
+  "lat": 8,
+  "lon": -165,
+  "dist": 5.3,
+  "ty": 880
+ }
+}
