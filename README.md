@@ -182,6 +182,16 @@ for i in range(120):
 
 <p><img src="cover/previews/pg_landscape.jpg" width="62%"> <img src="cover/previews/pg_portrait.jpg" width="20%"></p>
 
+## 插画风规范（`illustration/`）
+
+这是地理科普视频里、地球镜头以外的通用插画规范，不限题材。画面在 Blender 里用真 3D 模型搭出来：三档色阶平涂，暗部统一偏暖紫，合成器按法线和深度描一圈墨青色轮廓，最后叠一层纸纹。颜色明艳，大面积仍是浅色、中等饱和，焦点色收着，有体积，也有纸面插画的质感。
+
+<p><img src="illustration/style_sheet.png" width="100%" alt="插画风色板与四帧样例"></p>
+
+- 规范文档：[`illustration/SPEC.md`](illustration/SPEC.md)，写了风格定义、vivid 1.0 / 1.25 两档、亮度、饱和度、暖色占比的可测界线、色板、题材切换、难元素做法和交付清单。
+- 一键示例：`"${BLENDER:-blender}" -b --python illustration/example_scene.py -- --pct 50`，成品在 `illustration/out/example.png`。灯塔和沙盘用同样的方式跑 `illustration/scenes/scene_lighthouse.py`、`illustration/scenes/scene_sandbox.py`。脚本会先写出同名的 `*_raw.png`（还没叠纸纹），那是运行时才生成的中间文件，仓库里没有；叠完纸纹的 `out/*.png` 才是成品，四张示例成品已经附在 `illustration/out/`。
+- 依赖：Blender 3.6（Eevee），仓库不附带，需要自己安装。可执行文件放在 `PATH` 里并命名为 `blender`，或用环境变量 `BLENDER` 指向它。测量成图的 `check_frame.py` 和叠纸纹的 `paper.py` 只用本仓库已有的 numpy、Pillow。
+
 ## 文件
 
 | 文件 | 作用 |
@@ -197,6 +207,7 @@ for i in range(120):
 | `docs/` | 效果预览图 |
 | `tex_b64/` | base64 编码的贴图 |
 | `cover/` | 封面规范 `SPEC.md`、一键脚本 `make_cover.py`（直接调用根目录的 `globe.py`）、火山点数据、示例配置、反推视角工具、预览图 |
+| `illustration/` | 通用插画风规范 `SPEC.md`、Blender 平涂与描边工具、纸纹后期、成图测量、灯塔和沙盘示例场景、色板拼图 `style_sheet.png` |
 
 ## 贴图来源与版权
 
