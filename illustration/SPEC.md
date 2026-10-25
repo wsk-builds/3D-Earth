@@ -16,9 +16,13 @@
 | `paper.py` | 后期纸纹：颗粒 → 饱和度 → 暖纸调 → 暗角。`python3 paper.py in.png out.png --style vivid --vivid 1.0` |
 | `check_frame.py` | 交付前自动测量（§3）。`python3 check_frame.py [--cool] frame.png` |
 | `make_sheet.py` | 生成 `style_sheet.png`（色板 + 四帧对照 + 测量值） |
+| `render_anim.py` | 动画镜头渲染器（§11）：一个进程搭一次场景连续渲、默认 4 采样、纸纹批处理、首中尾三帧自检、N 个 Blender 并行、断点续渲、出 MP4 |
+| `paper_batch.py` | 纸纹批处理（多进程，贴图和暗角只算一次），输出和 `paper.py` 逐像素一致 |
+| `compare_samples.py` | 8 采样 vs 4 采样对比（§11.4）：逐帧差、描边处多出来的闪、左右对比 MP4 |
 | `new_scene_template.py` | 新题材脚本骨架（§9），能直接跑，出 `out/template.png` 且通过检查 |
 | `example_scene.py` | 最小示例：草地、白墙小屋、河、石、灯笼、树、云、流线 |
 | `scenes/scene_lighthouse.py`、`scenes/scene_sandbox.py` | 两个验证题材：海边灯塔（冷主调）、桌面地形沙盘（科学示意） |
+| `scenes/anim_sandbox.py`、`anim_sandbox_preview.jpg` | 动画示例：沙盘 3 秒环绕推近（复用 `scene_sandbox.py` 搭场景），以及它的首、中、尾三帧预览 |
 | `tex/paper.png`、`tex/make_tex.py` | 纸纹贴图及其生成脚本 |
 | `ref/B8_C.png`、`ref/B6_D.png` | 用户选定的两张基准帧副本 |
 | `out/*.png` | 已附带的示例成品（example、lighthouse、sandbox、template）。同名的 `out/*_raw.png` 不在仓库里 |
@@ -335,3 +339,100 @@ python3 check_frame.py --raw out/xxx_raw.png --vivid 1.25   # 测原图（先套
 python3 check_frame.py --json a.png b.png          # 机器可读；全部通过返回 0
 python3 make_sheet.py                              # 重新生成 style_sheet.png
 ```
+
+---
+
+## 11. 动画镜头：`render_anim.py`
+
+单帧用 `render_still`；**一个镜头（几十到几百帧）用 `render_anim.py`**。它把四条提速一起做了，画风不变：
+
+1. **一个 Blender 进程渲一整段**：场景只搭一次，之后每帧只花渲染时间；
+2. **默认 4 采样**（`render_still` 默认 8）；
+3. **纸纹批处理**：一个 Python 进程开多进程池，贴图和暗角只算一次；`check_frame` 只测首、中、尾三帧；
+4. **N 个 Blender 并行**：帧范围切成 N 段连续的帧，各开一个进程。
+
+另外：**可断点续渲**（已完成的帧跳过；中断、崩溃、强杀后原样重跑同一条命令即可），所有帧原子写入（先写 `.tmp_*` 再改名，不会留下半张图）。
+
+### 11.1 动画场景的约定（契约）
+
+动画场景脚本只做三件事，渲染全交给 `render_anim.py`：
+
+1. **搭场景**：照单帧脚本写；已有单帧脚本就用 `G = T.build_scene('scenes/scene_xxx.py')` 直接复用（执行它，但跳过末尾的 `render_still`，返回它的全局变量 `G['sc']`、`G['cam']`……），不要复制搭场景的代码；
+2. **打关键帧**：相机、物体、材质值都用 Blender 关键帧（或 `bl_common.animate_camera` / `anim_value`）。**画面只能由帧号决定**，不能依赖渲染顺序或上一帧的状态，因为各段在不同进程里渲；
+3. **写帧范围和 fps，最后一行调用 `T.render_anim`**：
+
+```python
+sc.render.fps = 30; sc.frame_start, sc.frame_end = 1, 90
+T.render_anim(sc, os.path.join(HERE, 'out', 'anim_xxx.png'), pct=opt('--pct', 50), cool=COOL)
+```
+
+`T.render_anim` 按启动方式自动分流：由 `render_anim.py` 启动时只渲分给它的帧（写原图到 `raw/`）；探测时只报帧范围；**直接用 blender 跑时渲中间一帧当预览**（走 `render_still`，叠纸纹并自检），搭镜头时就这样快速看一帧。`--vivid` 等参数由 `render_anim.py` 原样传给场景脚本。示例见 `scenes/anim_sandbox.py`。
+
+### 11.2 命令
+
+```bash
+export BLENDER=/path/to/blender-3.6/blender        # 没设就用 PATH 里的 blender
+python3 render_anim.py scenes/anim_sandbox.py --mp4            # 整段：帧范围取自场景，默认 4 采样、100%
+python3 render_anim.py scenes/anim_xxx.py --frames 1-60 --workers 4 --pct 50 --vivid 1.25 --cool --mp4
+python3 render_anim.py scenes/anim_xxx.py --samples 8          # 回到 8 采样（§11.4 没过、或不想冒险时）
+"$BLENDER" -b --python scenes/anim_sandbox.py -- --pct 50      # 只看中间一帧预览 → out/anim_sandbox.png
+```
+
+| 选项 | 缺省 | 说明 |
+|---|---|---|
+| `--frames A-B` | 场景的 `frame_start`–`frame_end` | 只渲一段（预演、补帧） |
+| `--workers N` | min(CPU 核数 / 2, (可用内存 − 0.5 GB) / 1.2 GB)，至少 1 | 并行 Blender 进程数，见 §11.5 |
+| `--samples` | 4 | Eevee TAA 采样；`--samples 8` 回到单帧的默认值 |
+| `--pct` | 100 | 分辨率百分比（1920×1080 × pct） |
+| `--vivid`、`--cool` | 场景自己的缺省 | 传给场景脚本；`--cool` 也决定 check_frame 用冷主调界线 |
+| `--out DIR` | `out/anim/<场景名>/` | 成品帧 `DIR/0001.png…`，Blender 原图 `DIR/raw/`，各进程日志 `DIR/logs/` |
+| `--mp4` | 关 | 出 `DIR/<场景名>.mp4`：H.264 High、yuv420p、faststart、无音轨、按场景 fps |
+| `--no-check` | 关 | 不跑首、中、尾三帧的 check_frame |
+| `--restart` | 关 | 清空 DIR 从头渲。参数（采样、分辨率、档位）和 DIR 里上次不同时，脚本会拒绝续渲并提示加它 |
+| `--clean-raw` | 关 | 全部完成后删掉 `raw/` |
+
+返回码：0 成功；1 check_frame 不过；2 渲染或纸纹失败（失败进程的日志末尾会打印出来；修好后重跑同一条命令，只补缺的帧）。运行时逐帧打印进度和剩余时间，最后打印用时汇总（探测、渲染、纸纹、检查、MP4）。
+
+**一致性**：同一帧、同样的采样数，`render_anim.py` 的成品和 `render_still` + `paper.py` 逐像素相同（沙盘第 45 帧 8 采样实测最大差 0）。Eevee 软件渲染在不同次运行之间本身有极少量抖动：每帧 0–2 个像素不同，其余像素差 ≤ 2 级。
+
+### 11.3 实测（沙盘 3 秒环绕推近，1080p，30 fps，90 帧；Blender 3.6.19，无显卡，8 核 CPU 软件渲染）
+
+| 做法 | 用时 | 每帧 | 提速 | 5 秒镜头（150 帧）估算 |
+|---|---|---|---|---|
+| A 每帧开一次 Blender，8 采样，每帧纸纹 + 检查（测 15 帧外推） | — | 7.33 s | 1.00× | 约 18.3 分钟 |
+| B ＋① 一个进程连续渲，8 采样 | 532 s | 5.91 s | 1.24× | 约 14.8 分钟 |
+| C ＋② 4 采样 | 404 s | 4.49 s | 1.63× | 约 11.2 分钟 |
+| D ＋③ 纸纹批处理、三帧检查 | 263 s | 2.92 s | 2.51× | 约 7.3 分钟 |
+| E ＋④ 2 个 Blender 并行 | 159 s | 1.77 s | 4.14× | 约 4.4 分钟 |
+| E ＋④ 4 个 Blender 并行 | 120 s | 1.33 s | 5.50× | 约 3.3 分钟 |
+| `render_anim.py --workers 4 --mp4`（含探测和出 MP4） | 125 s | 1.39 s | 5.3× | 约 3.4 分钟 |
+
+时间去向：单帧里 Blender 启动约 0.6 s、搭沙盘约 0.8 s、8 采样渲染约 4.1 s、4 采样约 2.7 s、纸纹（单独起进程）约 1.25 s、检查约 0.5 s。纸纹批处理后 90 帧共约 13 s。四条做完以后，渲染本身占总时间九成以上。
+
+### 11.4 4 采样什么时候能用
+
+- **沙盘镜头已验证可用**：4 采样和 8 采样逐帧相比，平均每帧只有 0.07% 的像素差超过 16 级（都在描边边缘）；描边处「4 采样多出来的闪」平均 0.33 级，是镜头运动本身造成的帧间变化（约 11.5 级）的 3%；放大 3–4 倍逐帧看，看不出差别。描边和台阶边缘的锯齿在 8 采样下一样有，跟采样数无关。
+- **细线、雨、浪花、粒子、快速运动的镜头先对比再定**【待验证】：挑最难的 1–2 秒，分别用 8 和 4 采样渲一遍，跑 `compare_samples.py`：
+
+```bash
+python3 render_anim.py scenes/anim_xxx.py --frames 1-45 --samples 8 --out out/anim/xxx_s8
+python3 render_anim.py scenes/anim_xxx.py --frames 1-45 --samples 4 --out out/anim/xxx_s4
+python3 compare_samples.py out/anim/xxx_s8 out/anim/xxx_s4 --mp4 --crop 700,420,480,270
+```
+
+  它打印逐帧差（diff16）和描边处多出来的闪（flicker），给出「可用 4 采样 / 保持 8 采样」（判定线：diff16 最大 < 0.2% 且 flicker < 1.0 级，约为沙盘实测值的 3 倍【推断】），并出左右对比 MP4（左 8 右 4；`--crop` 再出 3 倍放大的局部）。数没过，或者放大看见边缘在闪，就用 `--samples 8`。
+
+### 11.5 并行进程数和内存
+
+- 每个 Blender 进程渲 1080p 沙盘约占 **1.2 GB** 内存；场景越重越多。缺省进程数按 CPU 核数的一半和可用内存估，内存紧就少开。
+- 没有显卡时 Eevee 走 CPU 软件渲染，一个进程本身就会用掉 2–3 个核，所以 8 核机器上 4 个进程基本到头（2 个 1.77 s/帧，4 个 1.33 s/帧）；再多只会互相抢 CPU。
+- 有显卡的机器每帧会快很多，进程数要另测【待验证】。
+
+### 11.6 注意
+
+- **第 ① 条的收益取决于搭场景有多贵**：沙盘搭场景只要约 0.8 s，所以 ① 单独只快 1.24×；地形网格大、物件多、要算模拟或读大贴图的场景，① 省得更多。另外每个进程第一帧还要编译着色器（多 0.5–1.5 s），并行进程越多，这部分摊得越不开。
+- **分辨率不是瓶颈**：50% 和 100% 单帧耗时几乎一样（时间主要花在场景和着色器上）；预演用 `--pct 50` 能省的主要是纸纹和磁盘。
+- **画面只能由帧号决定**（§11.1）。用随机数时固定种子，在搭场景时就生成好，不要在逐帧回调里取随机数。
+- 中断（Ctrl-C、`kill`）时会停掉所有 Blender 进程；主进程被强杀时，各 Blender 进程渲完手上这一帧后自己退出。已写完的帧都保留，重跑同一条命令即可续上。
+- 渲染输出在 `out/` 下，不入库；需要给人看的用 `--mp4`。
+

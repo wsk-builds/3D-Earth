@@ -2,7 +2,7 @@
 默认风格 vivid 1.0（明艳）；换档：use_style('vivid', 1.25) / use_style('fresh')，或环境变量 ILLU_STYLE / ILLU_VIVID。
 必须在搭材质之前选档（色阶节点在创建时写死参数）。
 
-调用顺序：reset → setup_render → toon_setup → sky_world/key_light → 建模(toon/flat/…) → comp_outline → render_still
+调用顺序：reset → setup_render → toon_setup → sky_world/key_light → 建模(toon/flat/…) → comp_outline → render_still（动画：打关键帧 → render_anim，见 SPEC §11）
 """
 import bpy, math, os, sys, subprocess
 import numpy as np
@@ -385,3 +385,47 @@ def render_still(sc, out_png, pct=50, samples=8, frame=None, cool=False, check=T
     subprocess.run(a, check=True)
     if check: subprocess.run(['python3', os.path.join(HERE, 'check_frame.py'), out_png] + (['--cool'] if cool else []))
     print('STILL_OK', out_png)
+
+# ---------------------------------------------------------------- 动画：交给 render_anim.py 分段并行渲染（§11）
+def _anim_arg(k):
+    a = sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else []
+    return a[a.index(k)+1] if k in a else None
+
+def render_anim(sc, preview_png=None, pct=50, cool=False):
+    """动画场景脚本的最后一行（契约见 SPEC §11）：场景、相机/物体关键帧、sc.frame_start/frame_end 都设好之后调用。
+    - 被 render_anim.py 启动（带 --anim-job job.json）：只渲 job 里列出的帧，写 Blender 原图（未加纸纹）到 raw_dir，原子写入；
+    - 带 --anim-probe meta.json：只写帧范围 / fps / 分辨率，不渲染；
+    - 直接用 blender 跑（都不带）：渲中间一帧当预览，走 render_still（纸纹 + 自检），输出 preview_png。"""
+    import json, time
+    probe = _anim_arg('--anim-probe')
+    meta = dict(frame_start=sc.frame_start, frame_end=sc.frame_end, fps=sc.render.fps / sc.render.fps_base,
+                res=(sc.render.resolution_x, sc.render.resolution_y), style=P['name'], vivid=P['strength'])
+    if probe:
+        with open(probe, 'w') as f: json.dump(meta, f)
+        print('ANIM_PROBE', json.dumps(meta), flush=True); return
+    job = _anim_arg('--anim-job')
+    if not job:
+        if preview_png is None: preview_png = os.path.join(HERE, 'out', 'anim_preview.png')
+        render_still(sc, preview_png, pct=pct, frame=(sc.frame_start + sc.frame_end)//2, cool=cool); return
+    J = json.load(open(job)); os.makedirs(J['raw_dir'], exist_ok=True)
+    if J.get('meta_out'):
+        with open(J['meta_out'], 'w') as f: json.dump(meta, f)
+    sc.render.resolution_percentage = J['pct']; sc.eevee.taa_render_samples = J['samples']
+    sc.render.image_settings.file_format = 'PNG'
+    print('ANIM_READY', len(J['frames']), flush=True); ppid = os.getppid()
+    for f in J['frames']:
+        if os.getppid() != ppid: print('ANIM_ORPHAN render_anim.py 已退出，停止', flush=True); return   # 主进程被强杀时不留孤儿进程
+        t = time.time(); dst = os.path.join(J['raw_dir'], f"{f:0{J['digits']}d}.png"); tmp = os.path.join(J['raw_dir'], f".tmp_{f}_{os.getpid()}.png")
+        sc.frame_set(f); sc.render.filepath = tmp; bpy.ops.render.render(write_still=True)
+        os.replace(tmp, dst)                                            # 原子：中断时只会留下 .tmp_*，不会留下半张帧
+        print(f'ANIM_FRAME {f} {time.time()-t:.3f}', flush=True)
+    print('ANIM_DONE', flush=True)
+
+def build_scene(script):
+    """复用现成的单帧场景脚本：执行它，但跳过末尾的 render_still，返回脚本的全局变量（sc、cam……）。
+    动画脚本里 `G = T.build_scene('scenes/scene_xxx.py')` 之后只管加关键帧，不用复制搭场景的代码。"""
+    import runpy
+    global render_still
+    keep = render_still; render_still = lambda *a, **k: None
+    try: return runpy.run_path(script if os.path.isabs(script) else os.path.join(HERE, script), run_name='__scene__')
+    finally: render_still = keep

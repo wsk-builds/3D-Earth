@@ -190,6 +190,7 @@ for i in range(120):
 
 - 规范文档：[`illustration/SPEC.md`](illustration/SPEC.md)，写了风格定义、vivid 1.0 / 1.25 两档、亮度、饱和度、暖色占比的可测界线、色板、题材切换、难元素做法和交付清单。
 - 一键示例：`"${BLENDER:-blender}" -b --python illustration/example_scene.py -- --pct 50`，成品在 `illustration/out/example.png`。灯塔和沙盘用同样的方式跑 `illustration/scenes/scene_lighthouse.py`、`illustration/scenes/scene_sandbox.py`。脚本会先写出同名的 `*_raw.png`（还没叠纸纹），那是运行时才生成的中间文件，仓库里没有；叠完纸纹的 `out/*.png` 才是成品，四张示例成品已经附在 `illustration/out/`。
+- 动画镜头：`python3 illustration/render_anim.py illustration/scenes/anim_sandbox.py --mp4`。一个进程搭一次场景连续渲、默认 4 采样、纸纹批处理、多个 Blender 并行，可断点续渲；8 核 CPU 上 1080p 每帧约 1.4 秒，比逐帧开 Blender 快约 5 倍。场景约定、命令和实测见 [`illustration/SPEC.md`](illustration/SPEC.md) §11。
 - 依赖：Blender 3.6（Eevee），仓库不附带，需要自己安装。可执行文件放在 `PATH` 里并命名为 `blender`，或用环境变量 `BLENDER` 指向它。测量成图的 `check_frame.py` 和叠纸纹的 `paper.py` 只用本仓库已有的 numpy、Pillow。
 
 ## 文件
@@ -207,7 +208,7 @@ for i in range(120):
 | `docs/` | 效果预览图 |
 | `tex_b64/` | base64 编码的贴图 |
 | `cover/` | 封面规范 `SPEC.md`、一键脚本 `make_cover.py`（直接调用根目录的 `globe.py`）、火山点数据、示例配置、反推视角工具、预览图 |
-| `illustration/` | 通用插画风规范 `SPEC.md`、Blender 平涂与描边工具、纸纹后期、成图测量、灯塔和沙盘示例场景、色板拼图 `style_sheet.png` |
+| `illustration/` | 通用插画风规范 `SPEC.md`、Blender 平涂与描边工具、纸纹后期、成图测量、灯塔和沙盘示例场景、色板拼图 `style_sheet.png`、动画渲染器 `render_anim.py` |
 
 ## 贴图来源与版权
 
