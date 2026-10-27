@@ -193,6 +193,13 @@ for i in range(120):
 - 动画镜头：`python3 illustration/render_anim.py illustration/scenes/anim_sandbox.py --mp4`。一个进程搭一次场景连续渲、默认 4 采样、纸纹批处理、多个 Blender 并行，可断点续渲；8 核 CPU 上 1080p 每帧约 1.4 秒，比逐帧开 Blender 快约 5 倍。场景约定、命令和实测见 [`illustration/SPEC.md`](illustration/SPEC.md) §11。
 - 依赖：Blender 3.6（Eevee），仓库不附带，需要自己安装。可执行文件放在 `PATH` 里并命名为 `blender`，或用环境变量 `BLENDER` 指向它。测量成图的 `check_frame.py` 和叠纸纹的 `paper.py` 只用本仓库已有的 numpy、Pillow。
 
+## 背景音乐规范（`audio/`）
+
+科普视频的背景音乐规范。默认背景音乐是《千年之后（氛围版）》；视频前 10 秒只有背景音乐、没有其他音效。
+
+- 规范文档：[`audio/SPEC.md`](audio/SPEC.md)，写了默认曲目、响度、混音参数和交付前检查。
+- 混音：`python3 audio/mix_bgm.py --sfx <音效混音.wav> --out <最终音轨.wav> --duration <秒>`，默认曲目是同目录的 `qiannian_zhihou_ambient.mp3`。需要系统里的 ffmpeg / ffprobe。
+
 ## 文件
 
 | 文件 | 作用 |
@@ -209,6 +216,7 @@ for i in range(120):
 | `tex_b64/` | base64 编码的贴图 |
 | `cover/` | 封面规范 `SPEC.md`、一键脚本 `make_cover.py`（直接调用根目录的 `globe.py`）、火山点数据、示例配置、反推视角工具、预览图 |
 | `illustration/` | 通用插画风规范 `SPEC.md`、Blender 平涂与描边工具、纸纹后期、成图测量、灯塔和沙盘示例场景、色板拼图 `style_sheet.png`、动画渲染器 `render_anim.py` |
+| `audio/` | 背景音乐规范 `SPEC.md`、默认背景音乐、一键混音脚本 `mix_bgm.py` |
 
 ## 贴图来源与版权
 
